@@ -279,3 +279,8 @@ h1,h2,h3{font-family:var(--serif);font-weight:600;letter-spacing:-.01em;margin:0
 /* Stripe test-mode indicator */
 .testmode-banner{background:#fff4d6;color:#6b4a00;border-bottom:1px solid #f0d58a;text-align:center;font-size:13.5px;line-height:1.4;padding:8px 14px}
 .testmode-banner b{letter-spacing:.02em}
+.gate{max-width:440px;margin:28px auto}
+.gate h1{font-size:30px}
+.gate .lead{margin:8px 0 18px}
+.gate .btn{margin-top:6px}
+.dash-actions{display:flex;gap:8px;align-items:center}
