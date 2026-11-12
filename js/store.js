@@ -103,8 +103,9 @@
     if (!hrs) return [];
     const earliest = Date.now() + s.minNoticeHours * 3600e3;
     const buf = s.travelBufferMin;
-    const dayBk = db.bookings.filter(b => b.status !== 'cancelled' && b.id !== excludeId && dayStart(b.start).getTime() === dayStart(date).getTime())
-      .map(b => { const st = new Date(b.start).getTime(); return [st, st + (b.minutes + buf) * 60e3]; });
+    const items = remoteBusy ? remoteBusy : db.bookings.filter(b => b.status !== 'cancelled');
+    const dayBk = items.filter(b => (!excludeId || b.id !== excludeId) && dayStart(b.start).getTime() === dayStart(date).getTime())
+      .map(b => { const st = new Date(b.start).getTime(); return [st, st + ((b.minutes || 0) + buf) * 60e3]; });
     const out = [];
     for (let m = hrs[0]; m + minutes <= hrs[1]; m += 30) {
       const st = at(date, m).getTime();
@@ -116,12 +117,15 @@
     return out;
   }
 
-  /* ---- Server sync: prices/rules and Stripe-paid bookings live on the server ---- */
+  /* ---- Server sync: prices/rules are public. Bookings load only after sign-in. ---- */
   const API = (location.protocol === 'http:' || location.protocol === 'https:') ? '' : null;
   let pushT = null, payments = { provider: 'demo', mode: 'demo', configured: false };
+  let remoteBusy = null;
+  const stripePaid = (b) => b && b.payment && (b.payment.provider === 'stripe' || b.payment.provider === 'stripe-test');
+  function saveLocal() { try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch (e) { /* storage unavailable */ } }
   function sendConfig() {
     const { services, addons, settings } = load();
-    return fetch(API + '/api/config', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ services, addons, settings }) }).catch(() => { });
+    return fetch(API + '/api/config', { method: 'PUT', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ services, addons, settings }) }).catch(() => { });
   }
   function pushConfig(now) {
     if (API === null) return Promise.resolve();
@@ -131,20 +135,44 @@
     return Promise.resolve();
   }
   function mergeServerBooking(b) {
-    const db = load(); const i = db.bookings.findIndex(x => x.id === b.id);
+    const db = load(); const i = db.bookings.findIndex(x => x.id === b.id || (b.ref && x.ref === b.ref));
     if (i >= 0) db.bookings[i] = { ...db.bookings[i], ...b, seen: db.bookings[i].seen || b.seen }; else db.bookings.push(b);
+  }
+  function applyPublic(st) {
+    const db = load();
+    if (st.config) { db.services = st.config.services; db.addons = st.config.addons; db.settings = st.config.settings; }
+    if (st.payments) payments = st.payments;
+    remoteBusy = Array.isArray(st.busy) ? st.busy : [];
+    const keepId = (location.hash || '').startsWith('#/confirmed/') ? decodeURIComponent((location.hash || '').split('/')[2] || '') : '';
+    db.bookings = db.bookings.filter(b => b.id === keepId || !stripePaid(b));
+    saveLocal();
   }
   async function sync() {
     if (API === null) return;
     try {
-      const r = await fetch(API + '/api/state', { cache: 'no-store' });
-      if (!r.ok) return;
-      const st = await r.json(); const db = load();
-      if (st.config) { db.services = st.config.services; db.addons = st.config.addons; db.settings = st.config.settings; }
-      (st.bookings || []).forEach(mergeServerBooking);
-      if (st.payments) payments = st.payments;
-      try { localStorage.setItem(KEY, JSON.stringify(mem)); } catch (e) { }
-    } catch (e) { /* offline: keep local data */ }
+      const r = await fetch(API + '/api/catalog', { cache: 'no-store', credentials: 'same-origin' });
+      if (!r.ok) { remoteBusy = []; return; }
+      applyPublic(await r.json());
+    } catch (e) { remoteBusy = []; }
+  }
+  async function syncDashboard() {
+    if (API === null) return;
+    const r = await fetch(API + '/api/state', { cache: 'no-store', credentials: 'same-origin' });
+    if (r.status === 401 || r.status === 403) { const err = new Error('signin'); err.status = r.status; throw err; }
+    if (!r.ok) throw new Error('Could not load bookings');
+    const st = await r.json();
+    const db = load();
+    if (st.config) { db.services = st.config.services; db.addons = st.config.addons; db.settings = st.config.settings; }
+    db.bookings = Array.isArray(st.bookings) ? st.bookings : [];
+    if (st.payments) payments = st.payments;
+    remoteBusy = db.bookings.filter(b => b.status !== 'cancelled').map(b => ({ start: b.start, minutes: b.minutes }));
+    saveLocal();
+  }
+  function forgetSensitive() {
+    if (API === null || !mem) return;
+    mem.bookings = mem.bookings.filter(b => !stripePaid(b));
+    remoteBusy = [];
+    saveLocal();
   }
 
   window.Store = {
@@ -152,7 +180,7 @@
     get db() { return load(); },
     save() { save(); pushConfig(); },
     async reset() { mem = fresh(); save(); await pushConfig(true); return sync(); },
-    sync, mergeServerBooking,
+    sync, syncDashboard, forgetSensitive, mergeServerBooking,
     get payments() { return payments; },
     get online() { return API !== null; },
     priceFor: (svc, size) => priceFor(svc, size, load().settings),
@@ -164,8 +192,8 @@
       const b = load().bookings.find(x => x.id === id);
       if (b) {
         Object.assign(b, patch); save();
-        if (API !== null && b.payment && b.payment.provider === 'stripe-test' && (patch.seen !== undefined || patch.status)) {
-          fetch(API + '/api/bookings/' + encodeURIComponent(id), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seen: patch.seen, status: patch.status }) }).catch(() => { });
+        if (API !== null && b.payment && (b.payment.provider === 'stripe-test' || b.payment.provider === 'stripe') && (patch.seen !== undefined || patch.status)) {
+          fetch(API + '/api/bookings/' + encodeURIComponent(id), { method: 'PATCH', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ seen: patch.seen, status: patch.status }) }).catch(() => { });
         }
       }
       return b;

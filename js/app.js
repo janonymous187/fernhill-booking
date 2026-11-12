@@ -26,7 +26,8 @@
   const LOGO = '<svg class="brand-mark" viewBox="0 0 40 40" aria-hidden="true"><rect width="40" height="40" rx="11" fill="#1f3d33"/><path d="M20 8.5c-6.2 5-8.4 10-8.4 14.2a8.4 8.4 0 0 0 16.8 0C28.4 18.5 26.2 13.5 20 8.5z" fill="#faf6ef"/><path d="M20 15v16M20 21l-3.2-3M20 25.5l3.6-3.4" stroke="#1f3d33" stroke-width="1.8" stroke-linecap="round" fill="none"/></svg>';
 
   const STRIPE = () => Store.online && Store.payments.provider === 'stripe';
-  const TEST_BANNER = () => STRIPE() ? `<div class="testmode-banner" role="note"><b>Stripe TEST MODE</b> · No real money moves. Pay with test card 4242 4242 4242 4242, any future date, any CVC.</div>` : '';
+  const LIVE = () => STRIPE() && Store.payments.mode === 'live';
+  const TEST_BANNER = () => (STRIPE() && !LIVE()) ? `<div class="testmode-banner" role="note"><b>Stripe TEST MODE</b> · No real money moves. Pay with test card 4242 4242 4242 4242, any future date, any CVC.</div>` : '';
 
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(t._h); t._h = setTimeout(() => t.classList.remove('show'), 2200); }
 
@@ -94,7 +95,7 @@
           <aside class="summary-col desk-only" aria-label="Booking summary">${summaryCard(q)}</aside>
         </div>
       </div>
-      <p class="foot">${BIZ.name} · ${BIZ.city} · ${BIZ.phone}<br>${STRIPE() ? 'Deposits run through Stripe in TEST MODE. No real cards are charged and no money moves.' : 'Demo booking app built for Jeb. Deposits use a demo checkout; no real charges are made.'}</p>
+      <p class="foot">${BIZ.name} · ${BIZ.city} · ${BIZ.phone}<br>${LIVE() ? 'Deposits are paid through Stripe.' : STRIPE() ? 'Deposits run through Stripe in TEST MODE. No real cards are charged and no money moves.' : 'Demo booking app built for Jeb. Deposits use a demo checkout; no real charges are made.'}</p>
       ${S.step < 3 ? mobileBar(q) : ''}`;
     const d2 = $('.days'); if (d2) d2.scrollLeft = daysScroll;
     if (opts.scrollTop) window.scrollTo({ top: 0 });
@@ -249,7 +250,10 @@
       </div>
       <label class="agree"><input type="checkbox" data-act="agree" data-fk="agree" ${S.agree ? 'checked' : ''}><span>I've read and agree to the cancellation and deposit policy.</span></label>
       <div class="paybox">
-        ${STRIPE() ? `<div class="paybox-head"><h4>Payment</h4><span class="pill warn">Stripe test mode</span></div>
+        ${LIVE() ? `<div class="paybox-head"><h4>Payment</h4><span class="pill">Stripe</span></div>
+        <div id="pay-element"><div class="testcard"><span class="cc" aria-hidden="true"></span><span class="t">Secure Stripe Checkout<small>You'll pay the deposit on Stripe's page. The rest is due at the visit.</small></span>${I.lock.replace('<svg', '<svg style="width:18px;height:18px;color:#6b766f"')}</div></div>
+        <button class="btn btn-clay btn-block" style="margin-top:14px" data-act="pay" data-fk="pay" ${S.agree && !S.paying ? '' : 'disabled'}>${S.paying ? '<span class="spinner" aria-hidden="true"></span> Opening Stripe…' : `Pay ${money(q.deposit)} deposit`}</button>
+        <p class="demo-line">The deposit holds your spot. You can cancel free of charge up to ${Store.db.settings.cancelWindowHours} hours before.</p>` : STRIPE() ? `<div class="paybox-head"><h4>Payment</h4><span class="pill warn">Stripe test mode</span></div>
         <div id="pay-element"><div class="testcard"><span class="cc" aria-hidden="true"></span><span class="t">Secure Stripe Checkout (test mode)<small>You'll enter a test card on Stripe's page. Use 4242 4242 4242 4242, any future expiry, any CVC and ZIP.</small></span>${I.lock.replace('<svg', '<svg style="width:18px;height:18px;color:#6b766f"')}</div></div>
         <button class="btn btn-clay btn-block" style="margin-top:14px" data-act="pay" data-fk="pay" ${S.agree && !S.paying ? '' : 'disabled'}>${S.paying ? '<span class="spinner" aria-hidden="true"></span> Opening Stripe…' : `Pay ${money(q.deposit)} deposit (test mode)`}</button>
         <p class="demo-line">Stripe TEST MODE: no real card is charged and no money moves.${Store.payments.configured ? '' : ' <b>Stripe isn\'t connected on the server yet, so checkout is unavailable.</b>'}</p>` : `<div class="paybox-head"><h4>Payment</h4><span class="pill warn">Demo checkout</span></div>
@@ -344,7 +348,7 @@
         <div class="sum-row total"><span>Total</span><span>${money(b.total)}</span></div>
         <div class="kv" style="color:var(--ok);font-weight:650"><span style="color:var(--ok)">Deposit paid</span><span>− ${money(b.deposit)}</span></div>
         <div class="kv" style="font-weight:700"><span style="color:var(--ink)">Balance due at visit</span><span>${money(b.balance)}</span></div>
-        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Paid with ${esc(b.payment.method)} ${b.payment.provider === 'stripe-test' ? '(Stripe test mode, no real money moved).' : '(demo payment, nothing was charged).'}</p>
+        <p class="muted" style="font-size:12.5px;margin:8px 0 0">Paid with ${esc(b.payment.method)}${b.payment.livemode ? '.' : b.payment.provider === 'stripe-test' ? ' (Stripe test mode, no real money moved).' : ' (demo payment, nothing was charged).'}</p>
       </div>
       <div class="card">
         <h3 style="font-size:18px;margin-bottom:6px">What happens next</h3>
@@ -358,7 +362,7 @@
           <a class="btn btn-ghost" href="#/" data-act="again">Book another dog</a>
         </div>
       </div>
-      <p class="foot" style="padding-top:8px">${b.payment.provider === 'stripe-test' ? 'Stripe test mode · ' : ''}Demo tip: open the <a href="#/dashboard">groomer dashboard</a> to see this booking arrive.</p>
+      <p class="foot" style="padding-top:8px">${b.payment.livemode ? '' : `${b.payment.provider === 'stripe-test' ? 'Stripe test mode · ' : ''}Demo tip: open the <a href="#/dashboard">groomer dashboard</a> to see this booking arrive.`}</p>
     </div></div>`;
     window.scrollTo({ top: 0 });
   }
@@ -435,16 +439,16 @@
         <div class="section-label" style="margin:6px 0 0">Weekly hours</div>
         <div style="font-size:14.5px;display:grid;gap:4px">${[1, 2, 3, 4, 5, 6, 0].map(d => { const h = s.hours[d]; const t = (m) => fTime(new Date(2026, 0, 1, 0, m)); return `<div class="kv"><span>${['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][d]}</span><span>${h ? t(h[0]) + ' – ' + t(h[1]) : 'Closed'}</span></div>`; }).join('')}</div>
         <div style="border-top:1px solid var(--line);padding-top:14px">
-          <div class="kv"><span>Payments</span><span class="pill warn">${STRIPE() ? 'Stripe test mode' : 'Demo mode'}</span></div>
-          <p class="muted" style="font-size:13.5px;margin:6px 0 12px">${STRIPE() ? 'New online bookings pay their deposit through Stripe Checkout in test mode, so no real money moves. Sample bookings are demo data. Going live (real payouts to your bank) needs Stripe account verification first.' : 'Deposits are simulated. Connecting Stripe (test mode first) turns these into real deposits paid out to your bank.'}</p>
+          <div class="kv"><span>Payments</span><span class="pill warn">${LIVE() ? 'Stripe' : STRIPE() ? 'Stripe test mode' : 'Demo mode'}</span></div>
+          <p class="muted" style="font-size:13.5px;margin:6px 0 12px">${LIVE() ? 'New online bookings pay their deposit through Stripe. The balance is collected at the visit.' : STRIPE() ? 'New online bookings pay their deposit through Stripe Checkout in test mode, so no real money moves. Sample bookings are demo data. Going live (real payouts to your bank) needs Stripe account verification first.' : 'Deposits are simulated. Connecting Stripe (test mode first) turns these into real deposits paid out to your bank.'}</p>
           <button class="btn btn-ghost btn-sm" data-act="reset">Reset demo data</button>
         </div>
       </div>`;
     }
 
     app.innerHTML = `${TEST_BANNER()}<div class="wrap">
-      <div class="dash-head"><div><h1>Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, Fernhill</h1><p>${fDayLong(new Date())} · <span class="pill warn" style="vertical-align:1px">${STRIPE() ? 'Stripe test mode' : 'Demo dashboard'}</span>${newCount ? ` · <b style="color:var(--clay)">${newCount} new booking${newCount > 1 ? 's' : ''}</b>` : ''}</p></div>
-      <a class="btn btn-primary btn-sm" href="#/">+ New booking</a></div>
+      <div class="dash-head"><div><h1>Good ${new Date().getHours() < 12 ? 'morning' : new Date().getHours() < 17 ? 'afternoon' : 'evening'}, Fernhill</h1><p>${fDayLong(new Date())} · <span class="pill warn" style="vertical-align:1px">${LIVE() ? 'Stripe' : STRIPE() ? 'Stripe test mode' : 'Demo dashboard'}</span>${newCount ? ` · <b style="color:var(--clay)">${newCount} new booking${newCount > 1 ? 's' : ''}</b>` : ''}</p></div>
+      <div class="dash-actions">${Store.online ? '<button class="btn btn-ghost btn-sm" data-act="logout">Log out</button>' : ''}<a class="btn btn-primary btn-sm" href="#/">+ New booking</a></div></div>
       <div class="stats">
         <div class="stat"><div class="k">Upcoming</div><div class="v">${upcoming.length}</div><div class="s">${thisWeek} in the next 7 days</div></div>
         <div class="stat"><div class="k">Deposits collected</div><div class="v">${money(depTotal)}</div><div class="s">${kept.length} paid bookings</div></div>
@@ -475,7 +479,7 @@
         <div class="kv" style="border-top:1px solid var(--line);margin-top:4px;padding-top:8px;font-weight:700"><span style="color:var(--ink)">Total</span><span>${money(b.total)}</span></div>
         <div class="kv"><span>Deposit</span><span style="color:${b.status === 'cancelled' ? 'var(--clay)' : 'var(--ok)'};font-weight:650">${money(b.deposit)} ${b.status === 'cancelled' ? 'refunded' : 'paid'}</span></div>
         <div class="kv"><span>Balance ${b.status === 'completed' ? 'collected' : 'due at visit'}</span><span>${b.status === 'cancelled' ? '—' : money(b.balance)}</span></div>
-        <p class="muted" style="font-size:12.5px;margin:6px 0 0">${esc(b.payment.method)} · ${b.payment.provider === 'stripe-test' ? 'Stripe test mode' : 'demo'} · ${esc(b.payment.id)}</p>
+        <p class="muted" style="font-size:12.5px;margin:6px 0 0">${esc(b.payment.method)} · ${b.payment.livemode ? 'Stripe' : b.payment.provider === 'stripe-test' ? 'Stripe test mode' : 'demo'} · ${esc(b.payment.id)}</p>
       </div>
       ${upcoming ? `<div style="display:grid;gap:8px;margin-top:4px">
         <button class="btn btn-primary" data-act="complete" data-id="${b.id}">Mark as completed</button>
@@ -502,6 +506,7 @@
       case 'pay': pay(); break;
       case 'ics': downloadIcs(Store.db.bookings.find(b => b.id === id)); break;
       case 'tab': D.tab = id; D.openId = null; renderDash(); break;
+      case 'retry-dash': renderDashGate(); break;
       case 'open': D.openId = id; Store.updateBooking(id, { seen: true }); renderDash(); break;
       case 'close': D.openId = null; renderDash(); break;
       case 'close-scrim': if (e.target === el) { D.openId = null; renderDash(); } break;
@@ -511,8 +516,8 @@
         const b = Store.db.bookings.find(x => x.id === id);
         if (!confirm(`Cancel ${b.dog.name}'s visit and refund the ${money(b.deposit)} deposit?`)) break;
         el.disabled = true;
-        if (b.payment.provider === 'stripe-test') {
-          try { const nb = await Payments.StripeTest.refundBooking(id); Store.mergeServerBooking(nb); Store.save(); D.openId = null; renderDash(); toast('Booking cancelled. Test deposit refunded in Stripe.'); }
+        if (b.payment.provider === 'stripe-test' || b.payment.provider === 'stripe') {
+          try { const nb = await Payments.StripeTest.refundBooking(id); Store.mergeServerBooking(nb); Store.save(); D.openId = null; renderDash(); toast(b.payment.provider === 'stripe' ? 'Booking cancelled and the deposit was refunded.' : 'Booking cancelled. Test deposit refunded in Stripe.'); }
           catch (err) { el.disabled = false; toast(err.message); }
           break;
         }
@@ -520,7 +525,16 @@
         Store.updateBooking(id, { status: 'cancelled', payment: { ...b.payment, refundId: r.id, status: 'refunded' } });
         D.openId = null; renderDash(); toast('Booking cancelled. Deposit refunded (demo).'); break;
       }
-      case 'reset': if (confirm('Reset all demo bookings and prices?')) { await Store.reset(); S = newState(); D = { tab: 'upcoming', openId: null }; renderDash(); toast('Demo data reset'); } break;
+      case 'logout': {
+        el.disabled = true;
+        try { await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' }); } catch (err) { /* still leave the page */ }
+        D = { tab: 'upcoming', openId: null };
+        Store.forgetSensitive();
+        await Store.sync();
+        renderLogin();
+        break;
+      }
+      case 'reset': if (confirm('Reset all demo bookings and prices?')) { await Store.reset(); if (Store.online) { try { await Store.syncDashboard(); } catch (err) { /* keep the reset copy */ } } S = newState(); D = { tab: 'upcoming', openId: null }; renderDash(); toast('Demo data reset'); } break;
     }
   });
 
@@ -554,13 +568,93 @@
       if (ok) { delete S.errors[k]; const f = el.closest('.field'); f.classList.remove('err'); el.removeAttribute('aria-invalid'); }
     }
   });
-  document.addEventListener('submit', (e) => { if (e.target.id === 'detailsForm') { e.preventDefault(); next(); } });
+  document.addEventListener('submit', async (e) => {
+    if (e.target.id === 'detailsForm') { e.preventDefault(); next(); return; }
+    if (e.target.id !== 'dashLogin') return;
+    e.preventDefault();
+    const input = e.target.querySelector('input');
+    const field = e.target.querySelector('.field');
+    const msg = e.target.querySelector('.msg');
+    const btn = e.target.querySelector('button');
+    field.classList.remove('err');
+    input.removeAttribute('aria-invalid');
+    msg.textContent = '';
+    btn.disabled = true;
+    try {
+      const r = await fetch('/api/login', { method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password: input.value }) });
+      if (!r.ok) {
+        btn.disabled = false;
+        field.classList.add('err');
+        input.setAttribute('aria-invalid', 'true');
+        msg.textContent = "That password isn't right.";
+        input.focus();
+        return;
+      }
+      input.value = '';
+      renderDashGate();
+    } catch (err) {
+      btn.disabled = false;
+      field.classList.add('err');
+      msg.textContent = 'Could not sign in. Please try again.';
+    }
+  });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && D.openId) { D.openId = null; renderDash(); } });
+
+  /* ---------------- Dashboard sign-in ---------------- */
+  let dashToken = 0;
+  function renderUnavailable() {
+    app.innerHTML = `<div class="wrap"><div class="card gate">
+      <h1>Bookings aren't available</h1>
+      <p class="lead">This page isn't available right now.</p>
+      <a class="btn btn-ghost" href="#/">Back to booking</a>
+    </div></div>`;
+  }
+  function renderLogin(opts = {}) {
+    app.innerHTML = `<div class="wrap"><form class="card gate" id="dashLogin" method="post" action="#/dashboard">
+      <h1>Groomer sign-in</h1>
+      <p class="lead">Enter the password to see your bookings.</p>
+      <div class="field ${opts.error ? 'err' : ''}">
+        <label for="dash-pw">Password</label>
+        <input type="password" id="dash-pw" name="password" autocomplete="current-password" required ${opts.error ? 'aria-invalid="true"' : ''} aria-describedby="dash-pw-msg">
+        <div class="msg" id="dash-pw-msg">${opts.error ? "That password isn't right." : ''}</div>
+      </div>
+      <button class="btn btn-primary btn-block" type="submit">Sign in</button>
+    </form></div>`;
+    const input = app.querySelector('#dash-pw');
+    if (input) input.focus();
+  }
+  async function renderDashGate() {
+    const token = ++dashToken;
+    app.innerHTML = `<div class="wrap"><div class="card gate"><h1>Loading bookings…</h1><p class="lead">One moment.</p></div></div>`;
+    let session = { available: false, signedIn: false };
+    try {
+      const r = await fetch('/api/session', { cache: 'no-store', credentials: 'same-origin' });
+      if (r.ok) session = await r.json();
+    } catch (e) { /* show the unavailable state */ }
+    if (token !== dashToken || !(location.hash || '').startsWith('#/dashboard')) return;
+    if (!session.available) { renderUnavailable(); return; }
+    if (!session.signedIn) { renderLogin(); return; }
+    try { await Store.syncDashboard(); }
+    catch (e) {
+      if (token !== dashToken || !(location.hash || '').startsWith('#/dashboard')) return;
+      if (e.status === 401) { renderLogin(); return; }
+      if (e.status === 403) { renderUnavailable(); return; }
+      app.innerHTML = `<div class="wrap"><div class="card gate"><h1>Couldn't load bookings</h1><p class="lead">Please try again in a moment.</p><button class="btn btn-primary" data-act="retry-dash">Try again</button></div></div>`;
+      return;
+    }
+    if (token !== dashToken || !(location.hash || '').startsWith('#/dashboard')) return;
+    renderDash();
+  }
 
   /* ---------------- Router ---------------- */
   function route() {
     const h = location.hash || '#/';
-    if (h.startsWith('#/dashboard')) { renderTop('dash'); document.title = 'Dashboard — Fernhill Mobile Grooming (demo)'; renderDash(); window.scrollTo({ top: 0 }); }
+    if (h.startsWith('#/dashboard')) {
+      renderTop('dash');
+      document.title = Store.online ? 'Bookings — Fernhill Mobile Grooming' : 'Dashboard — Fernhill Mobile Grooming (demo)';
+      if (Store.online) renderDashGate(); else renderDash();
+      window.scrollTo({ top: 0 });
+    }
     else if (h.startsWith('#/return')) { renderTop('book'); document.title = 'Confirming your deposit — Fernhill Mobile Grooming'; renderReturn(); }
     else if (h.startsWith('#/review')) {
       let saved = null; try { saved = JSON.parse(sessionStorage.getItem('fernhill-checkout') || 'null'); } catch (e) { }

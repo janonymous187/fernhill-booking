@@ -2,9 +2,9 @@
  * Payment provider layer.
  *
  * The booking flow only talks to `window.Payments`, never to a processor directly.
- * When served by server/server.js, deposits go through Stripe-hosted Checkout in TEST MODE
- * (StripeTestProvider). Opened from file:// with no server, it falls back to DemoProvider
- * (no card data collected, no money moves).
+ * When served by server/server.js, deposits go through Stripe-hosted Checkout
+ * (StripeTestProvider). A test key stays in test mode. Opened from file:// with no server,
+ * it falls back to DemoProvider (no card data collected, no money moves).
  * Payouts to a bank account are configured in the Stripe dashboard by the business owner.
  */
 (function () {
@@ -44,7 +44,7 @@
       return j;
     },
     async refundBooking(bookingId) {
-      const r = await fetch('/api/bookings/' + encodeURIComponent(bookingId) + '/refund', { method: 'POST' });
+      const r = await fetch('/api/bookings/' + encodeURIComponent(bookingId) + '/refund', { method: 'POST', credentials: 'same-origin' });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) throw new Error(j.error || 'Refund failed');
       return j.booking;
